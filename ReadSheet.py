@@ -2,7 +2,8 @@ import os
 import time
 import re
 from collections import defaultdict
-from GetSoup import  pricecharting_find_prices, gamestop_find_prices, get_pricecharting_url, get_google_url
+from Get_URLs import get_pricecharting_url, get_google_url
+from GetSoup import  pricecharting_find_prices, gamestop_find_prices
 from ReadSheet_Helpers import divide_sheet, find_last_cell, calculate_buyback
 from ConvertXLS import open_xls_as_xlsx
 import threading
@@ -20,6 +21,7 @@ class Game:
     c_flag = None
     item_number = None
     game_title = None
+    game_upc = None
     url_string = None
     sell_price = None
     buyback_url_string = None
@@ -39,7 +41,7 @@ class Game:
         self.row = row
         self.item_number, self.c_flag, self.game_title, self.next_game_item_number, \
             self.next_game_title, self.next_game_c_flag, self.next_game_match,\
-            self.previous_buyback_price, self.previous_sell_price\
+            self.previous_buyback_price, self.previous_sell_price, self.game_upc\
             = read_game(row, sheet)
 
 
@@ -69,9 +71,6 @@ def read_game(r, sheet):
         temp_next_item_number = next_item_number.replace("*", "")
         next_game_title = sheet.cell(row=r, column=9).value
 
-    previous_sell_price = sheet.cell()
-    previous_buyback_price = sheet.cell(row=r, column=5)
-
     if item_number == temp_next_item_number:
         #print("MATCH:", item_number, " ", next_item_number)
         next_game_match = True
@@ -80,10 +79,52 @@ def read_game(r, sheet):
     else:
         next_game_match = False
 
+    previous_sell_price = sheet.cell(row=r, column=4)
+    previous_buyback_price = sheet.cell(row=r, column=5)
+    game_upc = sheet.cell(row=r, column=10)
 
     sheet_lock.release()
     return item_number, c_flag, g_title, next_item_number, next_game_title, next_game_c_flag, \
-           next_game_match, previous_buyback_price, previous_sell_price
+           next_game_match, previous_buyback_price, previous_sell_price, game_upc
+
+
+def write_to_sheet(sheet):
+    for key, value in data_dict.items():
+        r = value[0]
+        sheet.cell(row=r, column=6).value = value[1]
+        sheet.cell(row=r, column=7).value = value[2]
+        sheet.cell(row=r, column=10).value = value[3]
+        sheet.cell(row=r, column=11).value = value[4]
+
+
+
+def done_and_save(sheet, wb, to_file):
+    write_to_sheet(sheet)
+    desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+    save_path = desktop + '\\' + to_file + '.xlsx'
+    wb.save(save_path)
+
+
+
+def check_deluxes(query):
+    deluxe_list = ["D.E", "DE", "D.E.", "L.E", "LE", "L.E.", "DELUXE", "DELUX"]
+
+    for words in deluxe_list:
+        for query_word in query.split():
+            if query_word == words:
+                return True
+    return False
+
+def title_acronyms(query):
+    acronyms = {"PKMN": "POKEMON",
+                "SP": "SOUTH PARK",
+                "RE": "RESIDENT EVIL"
+                }
+    for key in acronyms:
+        if key in query:
+            query = query.replace(key, acronyms[key])
+            return query
+    return query
 
 
 
@@ -96,8 +137,6 @@ def pc_collect_to_sheet(game, sheet, retailer):
         pricecharting_find_prices(game)
 
     sheet_lock.acquire()
-
-
 
     '''if next game match is true, then next game is a 'used' game.'''
     if game.next_game_match is True:
@@ -136,55 +175,23 @@ def pc_collect_to_sheet(game, sheet, retailer):
     read_count = read_count + 1
     #print("Count:", read_count)
 
+#make one call if upc is available
+def make_one_pc_upc_search(game, query, game_system):
+    return 0
 
-def write_to_sheet(sheet):
-    for key, value in data_dict.items():
-        r = value[0]
-        sheet.cell(row=r, column=6).value = value[1]
-        sheet.cell(row=r, column=7).value = value[2]
-        sheet.cell(row=r, column=10).value = value[3]
-        sheet.cell(row=r, column=11).value = value[4]
-
-
-
-def done_and_save(sheet, wb, to_file):
-    write_to_sheet(sheet)
-    desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
-    save_path = desktop + '\\' + to_file + '.xlsx'
-    wb.save(save_path)
-
-
-def check_deluxes(query):
-    deluxe_list = ["D.E", "DE", "D.E.", "L.E", "LE", "L.E.", "DELUXE", "DELUX"]
-
-    for words in deluxe_list:
-        for query_word in query.split(): 
-            if query_word == words:
-                return True
-    return False
-
-def title_acronyms(query):
-    acronyms = {"PKMN": "POKEMON",
-                "SP": "SOUTH PARK",
-                "RE": "RESIDENT EVIL"
-                }
-    for key in acronyms:
-        if key in query:
-            query = query.replace(key, acronyms[key])
-            return query
-    return query
 
 
 #make calls to pricecharting, 2 if need to truncate one word. pricecharting.com url
-def make_first_2_pc_calls(game, query, game_system):
-    game.url_string = get_pricecharting_url(query, game_system)
-    if game.url_string == "empty.url":
-        cut_last_word_title = game.game_title.rsplit(' ', 1)[0]
-        query = str(cut_last_word_title)
+def make_first_2_pc_search(game, query, game_system):
+    if game.url_string == ("empty.url" or ""):
         game.url_string = get_pricecharting_url(query, game_system)
+        if game.url_string == "empty.url":
+            cut_last_word_title = game.game_title.rsplit(' ', 1)[0]
+            query = str(cut_last_word_title)
+            game.url_string = get_pricecharting_url(query, game_system)
+    return game
 
-
-def make_n_google_calls(game, query, game_system, retailer):
+def make_n_google_search(game, query, game_system, retailer):
     index = 1
     '''below will cut off last word in title of game, sometimes wont give results due to truncated word'''
     length = len(game.game_title.split())
@@ -197,6 +204,7 @@ def make_n_google_calls(game, query, game_system, retailer):
                 game.url_string = get_google_url(query, game_system)
                 #print(game.url_string)
                 index = index + 1
+    return game
 
 
 '''Loop through all excel sheet rows to enter sell and buyback prices.'''
@@ -223,31 +231,33 @@ def begin_read(game_system, sheet, bounds, retailer):
             #print("SKIPPED DELUXE")
             continue
         '''
+        #make_one_pc_upc_search(game, query, game_system)
 
-        make_first_2_pc_calls(game, query, game_system)
-        make_n_google_calls(game, query, game_system, retailer)
+        #game = make_first_2_pc_search(game, query, game_system)
+        #game = make_n_google_search(game, query, game_system, retailer)
 
 
-        '''
         index = 1
         game.url_string = get_pricecharting_url(query, game_system)
-        print("FIRST CALL:", game.url_string)
+
         if game.url_string == "empty.url":
+            #print("1")
             cut_last_word_title = game.game_title.rsplit(' ', index)[0]
             query = str(cut_last_word_title)
             game.url_string = get_pricecharting_url(query, game_system)
+
         #below will cut off last word in title of game, sometimes wont give results due to truncated word
         length = len(game.game_title.split())
         if game.url_string == "empty.url":
+            #print("2")
             game.url_string = get_google_url(query, game_system)
             while not game.url_string.startswith('www.pricecharting.com') and length > index and length > 2:
                 cut_last_word_title = game.game_title.rsplit(' ', index)[0]
                 query = str(retailer) + " " + str(cut_last_word_title) + " " + str(game_system)
-                # print(query)
                 game.url_string = get_google_url(query, game_system)
-                # print(game.url_string)
+                print("3")
                 index = index + 1
-        '''
+
 
 
         if not (game.url_string.startswith('www.pricecharting.com') or game.url_string.startswith(
@@ -258,7 +268,7 @@ def begin_read(game_system, sheet, bounds, retailer):
             skipped_games.append(game.game_title)
             continue
 
-        print(game.url_string)
+        print("FINAL URL:", game.url_string)
         pc_collect_to_sheet(game, sheet, retailer)
 
 

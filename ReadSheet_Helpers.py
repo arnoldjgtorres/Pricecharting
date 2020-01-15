@@ -2,7 +2,7 @@ import math
 import numpy as np
 import os
 
-def split_into_parts(start, number, n_parts):
+def split_sheet_into_parts(start, number, n_parts):
     return np.linspace(int(start), int(number), n_parts+1)[1:]
 
 
@@ -11,7 +11,7 @@ def divide_sheet(max_row, max_threads, start, end):
     if end != "Max Row":
         max_row = end
 
-    my_array = split_into_parts(start, max_row, max_threads).tolist()
+    my_array = split_sheet_into_parts(start, max_row, max_threads).tolist()
 
     list_pairs = [(start, math.ceil(my_array[0]))]
 
@@ -35,15 +35,15 @@ def find_gecko(file):
             return os.path.join(root, file)
 
 def calculate_buyback(game):
-    #Playstation 4
-    #Nintendo Switch
-    #Xbox
-
-    if game.console == ('Playstation 4' or 'Nintendo Switch' or 'Xbox One'):
-
-        return 1
+    if game.c_flag == "0":
+        if game.sell_price == 0:
+            return game.previous_buyback_price
+        else:
+            return float(game.sell_price)/2
 
     else:
-        return 0
+        #TODO CALCULATE USED BUYBACK
+        return 5
+
 
     return 0

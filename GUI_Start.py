@@ -32,7 +32,7 @@ class Application(Frame):
         self.grid()
 
 
-        self.image = PIL.Image.open('mario_small_bg.gif')
+        self.image = PIL.Image.open('images/mario_small_bg.gif')
         self.bg_copy = self.image.copy()
         self.background_image = ImageTk.PhotoImage(self.image)
         self.background = Label(self, image=self.background_image)
